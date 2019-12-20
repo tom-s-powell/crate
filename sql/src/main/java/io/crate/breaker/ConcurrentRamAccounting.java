@@ -40,9 +40,11 @@ public final class ConcurrentRamAccounting implements RamAccounting {
     private final LongConsumer releaseBytes;
 
     public static ConcurrentRamAccounting forCircuitBreaker(String label, CircuitBreaker circuitBreaker) {
+        // The same method must be used for releasing, e.g ChildMemoryCircuitBreaker.addWithoutBreaking() does not
+        // take the breaker overhead setting into account and thus would release less then reserved.
         return new ConcurrentRamAccounting(
             bytes -> circuitBreaker.addEstimateBytesAndMaybeBreak(bytes, label),
-            bytes -> circuitBreaker.addWithoutBreaking(- bytes)
+            bytes -> circuitBreaker.addEstimateBytesAndMaybeBreak(- bytes, label)
         );
     }
 

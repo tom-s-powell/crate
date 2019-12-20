@@ -2185,6 +2185,12 @@ public final class InternalTestCluster extends TestCluster {
                 final CircuitBreakerService breakerService = getInstanceFromNode(CircuitBreakerService.class, nodeAndClient.node);
                 CircuitBreaker fdBreaker = breakerService.getBreaker(CircuitBreaker.FIELDDATA);
                 assertThat("Fielddata breaker not reset to 0 on node: " + name, fdBreaker.getUsed(), equalTo(0L));
+
+                CircuitBreaker crateQueryBreaker = breakerService.getBreaker("query");
+                if (crateQueryBreaker != null) {
+                    assertThat("Query breaker not reset to 0 on node: " + name, crateQueryBreaker.getUsed(), equalTo(0L));
+                }
+
                 try {
                     assertBusy(() -> {
                         CircuitBreaker acctBreaker = breakerService.getBreaker(CircuitBreaker.ACCOUNTING);
