@@ -63,7 +63,7 @@ Parameters
 :output_expression:
     An expression to be computed and returned by the UPDATE command after each
     row is updated. The expression can use any column names of the table or
-    ``*`` to return all columns.
+    ``*`` to return all columns. Also system columns can be returned.
 
 :output_name:
     A name to use for the result of the output expression.
