@@ -22,38 +22,23 @@
 
 package io.crate.expression.tablefunctions;
 
-import io.crate.action.sql.SessionContext;
-import io.crate.analyze.WhereClause;
 import io.crate.data.Input;
 import io.crate.data.Row;
 import io.crate.metadata.BaseFunctionResolver;
-import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionImplementation;
 import io.crate.metadata.FunctionInfo;
-import io.crate.metadata.Reference;
-import io.crate.metadata.ReferenceIdent;
 import io.crate.metadata.RelationName;
-import io.crate.metadata.Routing;
-import io.crate.metadata.RoutingProvider;
-import io.crate.metadata.RowGranularity;
 import io.crate.metadata.TransactionContext;
 import io.crate.metadata.functions.params.FuncParams;
-import io.crate.metadata.table.StaticTableInfo;
-import io.crate.metadata.table.TableInfo;
 import io.crate.metadata.tablefunctions.TableFunctionImplementation;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
 import io.crate.types.ObjectType;
-import org.elasticsearch.cluster.ClusterState;
 
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static io.crate.metadata.functions.params.Param.ANY_ARRAY;
 import static io.crate.types.DataTypes.isArray;
@@ -97,36 +82,9 @@ public class ValuesFunction {
         }
 
         @Override
-        public TableInfo createTableInfo() {
-            int noElements = info.ident().argumentTypes().size();
-            Map<ColumnIdent, Reference> columnMap = new LinkedHashMap<>(noElements);
-            Collection<Reference> columns = new ArrayList<>(noElements);
-
-            for (int i = 0; i < info.ident().argumentTypes().size(); i++) {
-                ColumnIdent columnIdent = new ColumnIdent("col" + (i + 1));
-                DataType dataType = ((ArrayType) info.ident().argumentTypes().get(i)).innerType();
-                Reference reference = new Reference(
-                    new ReferenceIdent(TABLE_IDENT, columnIdent), RowGranularity.DOC, dataType, i, null
-                );
-
-                columns.add(reference);
-                columnMap.put(columnIdent, reference);
-            }
-            return new StaticTableInfo(TABLE_IDENT, columnMap, columns, Collections.emptyList()) {
-                @Override
-                public RowGranularity rowGranularity() {
-                    return RowGranularity.DOC;
-                }
-
-                @Override
-                public Routing getRouting(ClusterState state,
-                                          RoutingProvider routingProvider,
-                                          WhereClause whereClause,
-                                          RoutingProvider.ShardSelection shardSelection,
-                                          SessionContext sessionContext) {
-                    return Routing.forTableOnSingleNode(TABLE_IDENT, state.getNodes().getLocalNodeId());
-                }
-            };
+        public ObjectType returnType() {
+            // TODO:
+            return (ObjectType) info.returnType();
         }
     }
 

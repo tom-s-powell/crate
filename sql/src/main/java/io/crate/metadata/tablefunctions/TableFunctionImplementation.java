@@ -25,15 +25,20 @@ package io.crate.metadata.tablefunctions;
 import io.crate.data.Row;
 import io.crate.expression.symbol.Function;
 import io.crate.expression.symbol.Symbol;
-import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.Scalar;
 import io.crate.metadata.TransactionContext;
-import io.crate.metadata.table.TableInfo;
+import io.crate.types.ObjectType;
 
 /**
  * Interface which needs to be implemented by functions returning whole tables as result.
  */
 public abstract class TableFunctionImplementation<T> extends Scalar<Iterable<Row>, T> {
+
+    /**
+     * @return Same as {@link #info()#returnType()}
+     *         except typed as `ObjectType` as `FunctionImplementation` must always return an object type.
+     */
+    public abstract ObjectType returnType();
 
     @Override
     public Symbol normalizeSymbol(Function function, TransactionContext txnCtx) {
@@ -41,15 +46,4 @@ public abstract class TableFunctionImplementation<T> extends Scalar<Iterable<Row
         // The RelationAnalyzer expects a function symbol and can't deal with Literals
         return function;
     }
-
-    /**
-     * Creates the metadata for the table that is generated upon execution of this function. This is the actual return
-     * type of the table function.
-     * <p>
-     * Note: The result type of the {@link FunctionInfo} that is returned by {@link #info()}
-     * is ignored for table functions.
-     *
-     * @return a table info object representing the actual return type of the function.
-     */
-    public abstract TableInfo createTableInfo();
 }

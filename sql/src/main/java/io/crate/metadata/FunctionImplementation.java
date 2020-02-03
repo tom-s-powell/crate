@@ -23,6 +23,7 @@ package io.crate.metadata;
 
 import io.crate.expression.symbol.Function;
 import io.crate.expression.symbol.Symbol;
+import io.crate.types.ObjectType;
 
 import javax.annotation.Nullable;
 

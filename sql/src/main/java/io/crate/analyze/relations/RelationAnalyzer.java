@@ -703,11 +703,9 @@ public class RelationAnalyzer extends DefaultTraversalVisitor<AnalyzedRelation, 
         FunctionIdent ident = function.info().ident();
 
         FunctionImplementation functionImplementation = functions.getQualified(ident);
-        TableFunctionImplementation tableFunction = TableFunctionFactory.from(functionImplementation);
-        TableInfo tableInfo = tableFunction.createTableInfo();
-        Operation.blockedRaiseException(tableInfo, statementContext.currentOperation());
+        TableFunctionImplementation<?> tableFunction = TableFunctionFactory.from(functionImplementation);
         QualifiedName qualifiedName = new QualifiedName(node.name());
-        TableRelation tableRelation = new TableFunctionRelation(tableInfo, tableFunction, function, qualifiedName);
+        TableFunctionRelation tableRelation = new TableFunctionRelation(tableFunction, function, qualifiedName);
         context.addSourceRelation(qualifiedName, tableRelation);
         return tableRelation;
     }
@@ -799,12 +797,9 @@ public class RelationAnalyzer extends DefaultTraversalVisitor<AnalyzedRelation, 
             arrays
         );
         FunctionImplementation implementation = functions.getQualified(function.info().ident());
-        TableFunctionImplementation tableFunc = TableFunctionFactory.from(implementation);
-        TableInfo tableInfo = tableFunc.createTableInfo();
-        Operation.blockedRaiseException(tableInfo, context.currentOperation());
+        TableFunctionImplementation<?> tableFunc = TableFunctionFactory.from(implementation);
         QualifiedName qualifiedName = new QualifiedName(ValuesFunction.NAME);
         TableFunctionRelation relation = new TableFunctionRelation(
-            tableInfo,
             tableFunc,
             function,
             qualifiedName

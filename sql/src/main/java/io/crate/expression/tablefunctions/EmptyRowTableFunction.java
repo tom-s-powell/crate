@@ -73,22 +73,9 @@ public class EmptyRowTableFunction {
         }
 
         @Override
-        public TableInfo createTableInfo() {
-            return new StaticTableInfo(TABLE_IDENT, Collections.emptyMap(), null, Collections.emptyList()) {
-                @Override
-                public RowGranularity rowGranularity() {
-                    return RowGranularity.DOC;
-                }
-
-                @Override
-                public Routing getRouting(ClusterState clusterState,
-                                          RoutingProvider routingProvider,
-                                          WhereClause whereClause,
-                                          RoutingProvider.ShardSelection shardSelection,
-                                          SessionContext sessionContext) {
-                    return Routing.forTableOnSingleNode(TABLE_IDENT, clusterState.getNodes().getLocalNodeId());
-                }
-            };
+        public ObjectType returnType() {
+            // TODO:
+            return ObjectType.untyped();
         }
     }
 

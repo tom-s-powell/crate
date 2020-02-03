@@ -126,6 +126,7 @@ public abstract class Scalar<ReturnType, InputType> implements FunctionImplement
     }
 
     public static class OperatorScalar<R, I> extends Scalar<R, I> implements OperatorFormatSpec {
+
         private final Scalar<R, I> func;
         private final String operator;
 

@@ -22,37 +22,54 @@
 
 package io.crate.analyze.relations;
 
+import io.crate.analyze.Fields;
+import io.crate.analyze.HavingClause;
+import io.crate.analyze.OrderBy;
+import io.crate.analyze.WhereClause;
 import io.crate.exceptions.ColumnUnknownException;
 import io.crate.expression.symbol.Field;
 import io.crate.expression.symbol.Function;
+import io.crate.expression.symbol.InputColumn;
 import io.crate.expression.symbol.Symbol;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.table.Operation;
-import io.crate.metadata.table.TableInfo;
 import io.crate.metadata.tablefunctions.TableFunctionImplementation;
 import io.crate.sql.tree.QualifiedName;
+import io.crate.types.ObjectType;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.util.List;
 import java.util.function.Consumer;
 
-public class TableFunctionRelation extends TableRelation {
+public class TableFunctionRelation implements AnalyzedRelation {
 
-    private final TableFunctionImplementation functionImplementation;
+    private final TableFunctionImplementation<?> functionImplementation;
     private final Function function;
+    private final QualifiedName qualifiedName;
+    private final Fields fields;
 
-    public TableFunctionRelation(TableInfo tableInfo,
-                                 TableFunctionImplementation functionImplementation,
+    public TableFunctionRelation(TableFunctionImplementation<?> functionImplementation,
                                  Function function,
                                  QualifiedName qualifiedName) {
-        super(tableInfo, qualifiedName);
+        assert function.valueType().id() == ObjectType.ID : "Table function must have `OBJECT` return type";
         this.functionImplementation = functionImplementation;
         this.function = function;
+        this.qualifiedName = qualifiedName;
+        ObjectType objectType = (ObjectType) function.valueType();
+        this.fields = new Fields(objectType.innerTypes().size());
+        int idx = 0;
+        for (var entry : objectType.innerTypes().entrySet()) {
+            fields.add(new Field(this, new ColumnIdent(entry.getKey()), new InputColumn(idx, entry.getValue())));
+            idx++;
+        }
     }
 
     public Function function() {
         return function;
     }
 
-    public TableFunctionImplementation functionImplementation() {
+    public TableFunctionImplementation<?> functionImplementation() {
         return functionImplementation;
     }
 
@@ -64,9 +81,64 @@ public class TableFunctionRelation extends TableRelation {
     @Override
     public Field getField(ColumnIdent path, Operation operation) throws UnsupportedOperationException, ColumnUnknownException {
         if (operation == Operation.READ) {
-            return getField(path);
+            return fields.get(path);
         }
         throw new UnsupportedOperationException("Table functions don't support write operations");
+    }
+
+    @Nonnull
+    @Override
+    public List<Field> fields() {
+        return fields.asList();
+    }
+
+    @Override
+    public QualifiedName getQualifiedName() {
+        return qualifiedName;
+    }
+
+    @Override
+    public List<Symbol> outputs() {
+        return List.copyOf(fields.asList());
+    }
+
+    @Override
+    public WhereClause where() {
+        return WhereClause.MATCH_ALL;
+    }
+
+    @Override
+    public List<Symbol> groupBy() {
+        return List.of();
+    }
+
+    @Nullable
+    @Override
+    public HavingClause having() {
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public OrderBy orderBy() {
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public Symbol limit() {
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public Symbol offset() {
+        return null;
+    }
+
+    @Override
+    public boolean hasAggregates() {
+        return false;
     }
 
     @Override
@@ -74,5 +146,10 @@ public class TableFunctionRelation extends TableRelation {
         for (Symbol argument : function.arguments()) {
             consumer.accept(argument);
         }
+    }
+
+    @Override
+    public boolean isDistinct() {
+        return false;
     }
 }

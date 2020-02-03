@@ -37,13 +37,13 @@ import java.util.UUID;
 
 public class TableFunctionCollectPhase extends RoutedCollectPhase implements CollectPhase {
 
-    private final TableFunctionImplementation functionImplementation;
+    private final TableFunctionImplementation<?> functionImplementation;
     private final List<Literal<?>> functionArguments;
 
     public TableFunctionCollectPhase(UUID jobId,
                                      int phaseId,
                                      Routing routing,
-                                     TableFunctionImplementation functionImplementation,
+                                     TableFunctionImplementation<?> functionImplementation,
                                      List<Literal<?>> functionArguments,
                                      List<Projection> projections,
                                      List<Symbol> outputs,
