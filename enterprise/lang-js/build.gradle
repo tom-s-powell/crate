@@ -21,6 +21,14 @@ task writePropertiesFile {
 jar.dependsOn('writePropertiesFile')
 dependencies {
     implementation project(':sql')
+
+    // GraalVM SDK & GraalJS Engine
+    implementation "org.graalvm.sdk:graal-sdk:${versions.graalvm}"
+    implementation "org.graalvm.js:js-scriptengine:${versions.graalvm}"
+    implementation "org.graalvm.js:js:${versions.graalvm}"
+    implementation "org.graalvm.truffle:truffle-api:${versions.graalvm}"
+    implementation "org.graalvm.compiler:compiler:${versions.graalvm}"
+
     testImplementation project(':integration-testing')
     testImplementation project(path: ':sql', configuration: 'testOutput')
     testImplementation project(path: ':dex', configuration: 'testOutput')

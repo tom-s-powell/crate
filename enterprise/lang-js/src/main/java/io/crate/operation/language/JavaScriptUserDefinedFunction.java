@@ -24,16 +24,21 @@ import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.Scalar;
 import io.crate.metadata.TransactionContext;
 import io.crate.types.ArrayType;
+import io.crate.types.DataType;
+import io.crate.types.DataTypes;
 import io.crate.types.GeoPointType;
+import io.crate.types.GeoShapeType;
 import io.crate.types.ObjectType;
-import jdk.nashorn.api.scripting.ScriptObjectMirror;
+import org.graalvm.polyglot.PolyglotException;
+import org.graalvm.polyglot.TypeLiteral;
+import org.graalvm.polyglot.Value;
 
-import javax.script.Bindings;
-import javax.script.ScriptException;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
+
+import static io.crate.operation.language.JavaScriptLanguage.resolvePolyglotFunctionValue;
 
 public class JavaScriptUserDefinedFunction extends Scalar<Object, Object> {
 
@@ -46,16 +51,14 @@ public class JavaScriptUserDefinedFunction extends Scalar<Object, Object> {
     }
 
     @Override
-    public FunctionInfo info() {
-        return info;
-    }
-
-    @Override
     public Scalar<Object, Object> compile(List<Symbol> arguments) {
         try {
-            return new CompiledFunction(JavaScriptLanguage.bindScript(script));
-        } catch (ScriptException e) {
-            // this should not happen if the script was evaluated upfront
+            return new CompiledFunction(
+                resolvePolyglotFunctionValue(
+                    info.ident().name(),
+                    script));
+        } catch (Throwable e) {
+            // this should not happen if the script was validated upfront
             throw new io.crate.exceptions.ScriptException(
                 "compile error",
                 e,
@@ -65,92 +68,103 @@ public class JavaScriptUserDefinedFunction extends Scalar<Object, Object> {
     }
 
     @Override
-    public Object evaluate(TransactionContext txnCtx, Input<Object>[] values) {
+    public Object evaluate(TransactionContext txnCtx, Input<Object>[] args) {
         try {
-            return evaluateScriptWithBindings(JavaScriptLanguage.bindScript(script), values);
-        } catch (ScriptException e) {
-            // this should not happen if the script was evaluated upfront
+            var function = resolvePolyglotFunctionValue(info.ident().name(), script);
+            return toCrateTypeValue(
+                function.execute(materializeArgs(args)),
+                info.returnType());
+        } catch (PolyglotException | IOException e) {
             throw new io.crate.exceptions.ScriptException(
-                "evaluation error",
+                e.getLocalizedMessage(),
                 e,
                 JavaScriptLanguage.NAME
             );
         }
+    }
+
+    @Override
+    public FunctionInfo info() {
+        return info;
     }
 
     private class CompiledFunction extends Scalar<Object, Object> {
 
-        private final Bindings bindings;
+        private final Value function;
 
-        private CompiledFunction(Bindings bindings) {
-            this.bindings = bindings;
+        private CompiledFunction(Value function) {
+            this.function = function;
+        }
+
+        @Override
+        public final Object evaluate(TransactionContext txnCtx, Input<Object>[] args) {
+            try {
+                return toCrateTypeValue(
+                    function.execute(materializeArgs(args)),
+                    info.returnType());
+            } catch (PolyglotException e) {
+                throw new io.crate.exceptions.ScriptException(
+                    e.getLocalizedMessage(),
+                    e,
+                    JavaScriptLanguage.NAME
+                );
+            }
         }
 
         @Override
         public FunctionInfo info() {
-            // return the functionInfo of the outer class,
-            // because the function info is the same for every compiled instance of a function
+            // Return the functionInfo of the outer class, because the function
+            // info is the same for every compiled function instance.
             return info;
         }
-
-        @Override
-        public final Object evaluate(TransactionContext txnCtx, Input<Object>[] values) {
-            return evaluateScriptWithBindings(bindings, values);
-        }
-
     }
 
-    private Object evaluateScriptWithBindings(Bindings bindings, Input<Object>[] values) {
-        Object[] args = new Object[values.length];
-        for (int i = 0; i < values.length; i++) {
-            args[i] = values[i].value();
+    private static Object[] materializeArgs(Input<Object>[] inputs) {
+        Object[] args = new Object[inputs.length];
+        for (int i = 0; i < inputs.length; i++) {
+            args[i] = Value.asValue(inputs[i].value());
         }
+        return args;
+    }
 
-        Object result;
-        try {
-            result = ((ScriptObjectMirror) bindings.get(info.ident().name())).call(this, args);
-        } catch (NullPointerException e) {
-            throw new io.crate.exceptions.ScriptException(
-                "The name of the function signature doesn't match the function name in the function definition.",
-                JavaScriptLanguage.NAME
-            );
-        } catch (Exception e) {
-            throw new io.crate.exceptions.ScriptException(
-                e.getMessage(),
-                e,
-                JavaScriptLanguage.NAME
-            );
-        }
-
-        if (result instanceof ScriptObjectMirror) {
-            return info.returnType().value(convertScriptResult((ScriptObjectMirror) result));
-        } else if (result != null && "Undefined".equals(result.getClass().getSimpleName())) {
+    private static Object toCrateTypeValue(Value value, DataType<?> type) {
+        if (value == null || "undefined".equalsIgnoreCase(value.getClass().getSimpleName())) {
             return null;
-        } else {
-            return info.returnType().value(result);
         }
-    }
-
-    private Object convertScriptResult(ScriptObjectMirror scriptObject) {
-        switch (info.returnType().id()) {
+        switch (type.id()) {
             case ArrayType.ID:
-                if (scriptObject.isArray()) {
-                    return scriptObject.values().toArray();
+                ArrayList<Object> items = new ArrayList<>();
+                for (int idx = 0; idx < value.getArraySize(); idx++) {
+                    var item = toCrateTypeValue(value.getArrayElement(idx), ((ArrayType) type).innerType());
+                    items.add(idx, item);
                 }
-                break;
+                return type.value(items);
             case ObjectType.ID:
-                return scriptObject.entrySet().stream()
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                return type.value(value.as(new TypeLiteral<Map>() {}));
             case GeoPointType.ID:
-                if (scriptObject.isArray()) {
-                    return GeoPointType.INSTANCE.value(scriptObject.values().toArray());
+                if (value.hasArrayElements()) {
+                    return type.value(toCrateTypeValue(value, DataTypes.DOUBLE_ARRAY));
+                } else {
+                    return type.value(value.asString());
                 }
-                break;
+            case GeoShapeType.ID:
+                if (value.isString()) {
+                    return type.value(value.asString());
+                } else {
+                    return type.value(value.as(new TypeLiteral<Map>() {}));
+                }
             default:
-                return scriptObject.values().toArray();
+                final Object polyglotValue;
+                if (value.isNumber()) {
+                    polyglotValue = value.as(new TypeLiteral<Number>() {});
+                } else if (value.isString()) {
+                    polyglotValue = value.asString();
+                } else if (value.isBoolean()) {
+                    polyglotValue = value.asBoolean();
+                } else {
+                    polyglotValue = value.asString();
+                }
+                return type.value(polyglotValue);
         }
-        throw new IllegalArgumentException(String.format(Locale.ENGLISH,
-            "The return type of the function [%s] is not compatible with the type of the function evaluation result.",
-            info.returnType()));
     }
 }
