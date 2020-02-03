@@ -129,7 +129,7 @@ public class UnnestFunction {
 
             for (int i = 0; i < info.ident().argumentTypes().size(); i++) {
                 ColumnIdent columnIdent = new ColumnIdent("col" + (i + 1));
-                DataType dataType = ArrayType.unnest(info.ident().argumentTypes().get(i));
+                DataType<?> dataType = ArrayType.unnest(info.ident().argumentTypes().get(i));
                 Reference reference = new Reference(
                     new ReferenceIdent(TABLE_IDENT, columnIdent), RowGranularity.DOC, dataType, i, null
                 );
@@ -137,7 +137,7 @@ public class UnnestFunction {
                 columns.add(reference);
                 columnMap.put(columnIdent, reference);
             }
-            return new StaticTableInfo(TABLE_IDENT, columnMap, columns, Collections.emptyList()) {
+            return new StaticTableInfo<>(TABLE_IDENT, columnMap, columns, Collections.emptyList()) {
                 @Override
                 public RowGranularity rowGranularity() {
                     return RowGranularity.DOC;
