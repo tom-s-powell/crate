@@ -23,14 +23,19 @@ package io.crate.analyze;
 
 import io.crate.analyze.expressions.ExpressionAnalysisContext;
 import io.crate.analyze.expressions.ExpressionAnalyzer;
+import io.crate.analyze.expressions.SubqueryAnalyzer;
 import io.crate.analyze.expressions.ValueNormalizer;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.DocTableRelation;
 import io.crate.analyze.relations.ExcludedFieldProvider;
 import io.crate.analyze.relations.FieldProvider;
+import io.crate.analyze.relations.FullQualifiedNameFieldProvider;
 import io.crate.analyze.relations.NameFieldProvider;
 import io.crate.analyze.relations.RelationAnalyzer;
 import io.crate.analyze.relations.StatementAnalysisContext;
+import io.crate.analyze.relations.select.SelectAnalysis;
+import io.crate.analyze.relations.select.SelectAnalyzer;
+import io.crate.common.collections.Lists2;
 import io.crate.exceptions.ColumnUnknownException;
 import io.crate.expression.eval.EvaluatingNormalizer;
 import io.crate.expression.symbol.DynamicReference;
@@ -55,6 +60,7 @@ import io.crate.sql.tree.Insert;
 import io.crate.sql.tree.ParameterExpression;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
+import org.elasticsearch.common.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -136,15 +142,34 @@ class InsertAnalyzer {
             insert.duplicateKeyContext()
         );
 
+        MaybeAliasedStatement maybeAliasedStatement = MaybeAliasedStatement.analyze(tableRelation);
+        AnalyzedRelation analyzedRelation = maybeAliasedStatement.nonAliasedRelation();
+
+
+
+        EvaluatingNormalizer normalizer = new EvaluatingNormalizer(functions, RowGranularity.CLUSTER, null, tableRelation);
+
         final boolean ignoreDuplicateKeys =
             insert.duplicateKeyContext().getType() == Insert.DuplicateKeyContext.Type.ON_CONFLICT_DO_NOTHING;
+
+        List<Symbol> returnValues = List.of();
+        List<ColumnIdent> outputNames = List.of();
+
+        var returningItems = processReturningItems(insert, txnCtx, typeHints, tableInfo);
+
+        if (returningItems != null) {
+            returnValues = Lists2.map(returningItems.outputSymbols(), x -> normalizer.normalize(x, txnCtx));
+            outputNames = returningItems.outputNames();
+        }
 
         return new AnalyzedInsertStatement(
             subQueryRelation,
             tableInfo,
             targetColumns,
             ignoreDuplicateKeys,
-            onDuplicateKeyAssignments);
+            onDuplicateKeyAssignments,
+            outputNames,
+            returnValues);
     }
 
     private static void verifyOnConflictTargets(Insert.DuplicateKeyContext duplicateKeyContext, DocTableInfo docTableInfo) {
@@ -311,5 +336,40 @@ class InsertAnalyzer {
 
         return getUpdateAssignments(functions, tableRelation, targetColumns, expressionAnalyzer,
             coordinatorTxnCtx, parameterContext, duplicateKeyContext);
+    }
+
+    @Nullable
+    private SelectAnalysis processReturningItems(Insert<?> insert, CoordinatorTxnCtx txnCtx, ParamTypeHints typeHints, DocTableInfo tableInfo) {
+        if (insert.returningClause().isEmpty()) {
+            return null;
+        }
+        var stmtCtx = new StatementAnalysisContext(typeHints, Operation.READ, txnCtx);
+        var relCtx = stmtCtx.startRelation();
+        relationAnalyzer.analyze(insert, stmtCtx);
+        SubqueryAnalyzer subqueryAnalyzer =
+            new SubqueryAnalyzer(relationAnalyzer, new StatementAnalysisContext(typeHints, Operation.UPDATE, txnCtx));
+
+        //MaybeAliasedStatement maybeAliasedStatement = MaybeAliasedStatement.analyze(new TableRelation(tableInfo));
+        //AnalyzedRelation analyzedRelation = maybeAliasedStatement.nonAliasedRelation();
+
+        var exprCtx = new ExpressionAnalysisContext();
+        var sourceExprAnalyzer = new ExpressionAnalyzer(
+            functions,
+            txnCtx,
+            typeHints,
+            new FullQualifiedNameFieldProvider(
+                relCtx.sources(),
+                relCtx.parentSources(),
+                txnCtx.sessionContext().searchPath().currentSchema()
+            ),
+            subqueryAnalyzer
+            );
+
+        return SelectAnalyzer.analyzeSelectItems(
+            insert.returningClause(),
+            stmtCtx.startRelation().sources(),
+            sourceExprAnalyzer,
+            exprCtx
+        );
     }
 }
