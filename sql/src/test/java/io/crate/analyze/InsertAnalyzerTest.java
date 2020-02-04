@@ -375,14 +375,14 @@ public class InsertAnalyzerTest extends CrateDummyClusterServiceUnitTest {
         AnalyzedInsertStatement stmt =
             e.analyze("insert into users(id, name) values(1, 'max') returning _id as foo");
         assertThat(stmt.fields(), contains(isField("foo")));
-        assertThat(stmt.returnValues(), contains(isReference("foo")));
+        assertThat(stmt.returnValues(), contains(isReference("_id")));
     }
 
     @Test
     public void test_insert_with_returning_all_columns() throws Exception {
         AnalyzedInsertStatement stmt =
             e.analyze("insert into users(id, name) values(1, 'max') returning *");
-        assertThat(stmt.fields().size(), is(16));
+        assertThat(stmt.fields().size(), is(17));
         assertThat(stmt.returnValues().size(), is(17));
     }
 

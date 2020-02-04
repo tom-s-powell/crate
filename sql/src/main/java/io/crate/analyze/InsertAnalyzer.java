@@ -33,6 +33,7 @@ import io.crate.analyze.relations.FullQualifiedNameFieldProvider;
 import io.crate.analyze.relations.NameFieldProvider;
 import io.crate.analyze.relations.RelationAnalyzer;
 import io.crate.analyze.relations.StatementAnalysisContext;
+import io.crate.analyze.relations.TableRelation;
 import io.crate.analyze.relations.select.SelectAnalysis;
 import io.crate.analyze.relations.select.SelectAnalyzer;
 import io.crate.common.collections.Lists2;
@@ -41,6 +42,7 @@ import io.crate.expression.eval.EvaluatingNormalizer;
 import io.crate.expression.symbol.DynamicReference;
 import io.crate.expression.symbol.Field;
 import io.crate.expression.symbol.InputColumn;
+import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.Symbol;
 import io.crate.expression.symbol.format.SymbolFormatter;
 import io.crate.expression.symbol.format.SymbolPrinter;
@@ -70,6 +72,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
@@ -144,8 +147,6 @@ class InsertAnalyzer {
 
         MaybeAliasedStatement maybeAliasedStatement = MaybeAliasedStatement.analyze(tableRelation);
         AnalyzedRelation analyzedRelation = maybeAliasedStatement.nonAliasedRelation();
-
-
 
         EvaluatingNormalizer normalizer = new EvaluatingNormalizer(functions, RowGranularity.CLUSTER, null, tableRelation);
 
@@ -345,29 +346,33 @@ class InsertAnalyzer {
         }
         var stmtCtx = new StatementAnalysisContext(typeHints, Operation.READ, txnCtx);
         var relCtx = stmtCtx.startRelation();
-        relationAnalyzer.analyze(insert, stmtCtx);
+        AnalyzedRelation analyze = relationAnalyzer.analyze(insert.table(), stmtCtx);
+        stmtCtx.endRelation();
         SubqueryAnalyzer subqueryAnalyzer =
-            new SubqueryAnalyzer(relationAnalyzer, new StatementAnalysisContext(typeHints, Operation.UPDATE, txnCtx));
+            new SubqueryAnalyzer(relationAnalyzer, new StatementAnalysisContext(typeHints, Operation.INSERT, txnCtx));
 
-        //MaybeAliasedStatement maybeAliasedStatement = MaybeAliasedStatement.analyze(new TableRelation(tableInfo));
-        //AnalyzedRelation analyzedRelation = maybeAliasedStatement.nonAliasedRelation();
+//        MaybeAliasedStatement maybeAliasedStatement = MaybeAliasedStatement.analyze(new TableRelation(tableInfo));
+//        AnalyzedRelation analyzedRelation = maybeAliasedStatement.nonAliasedRelation();
+
 
         var exprCtx = new ExpressionAnalysisContext();
         var sourceExprAnalyzer = new ExpressionAnalyzer(
             functions,
             txnCtx,
             typeHints,
-            new FullQualifiedNameFieldProvider(
-                relCtx.sources(),
-                relCtx.parentSources(),
-                txnCtx.sessionContext().searchPath().currentSchema()
-            ),
+            new NameFieldProvider(analyze),
+//            new FullQualifiedNameFieldProvider(
+//                relCtx.sources(),
+//                relCtx.parentSources(),
+//                txnCtx.sessionContext().searchPath().currentSchema()
+//            ),
             subqueryAnalyzer
             );
 
+
         return SelectAnalyzer.analyzeSelectItems(
             insert.returningClause(),
-            stmtCtx.startRelation().sources(),
+            relCtx.sources(),
             sourceExprAnalyzer,
             exprCtx
         );
