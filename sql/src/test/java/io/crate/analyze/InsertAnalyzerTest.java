@@ -365,17 +365,25 @@ public class InsertAnalyzerTest extends CrateDummyClusterServiceUnitTest {
     @Test
     public void test_insert_with_id_in_returning_clause() throws Exception {
         AnalyzedInsertStatement stmt =
-            e.analyze("insert into users(id, name) values(1, 'max') returning _id");
-        assertThat(stmt.fields(), contains(isField("_id")));
-        assertThat(stmt.returnValues(), contains(isReference("_id")));
+            e.analyze("insert into users(id, name) values(1, 'max') returning id");
+        assertThat(stmt.fields(), contains(isField("id")));
+        assertThat(stmt.returnValues(), contains(isReference("id")));
+    }
+
+    @Test
+    public void test_insert_with_docid_in_returning_clause() throws Exception {
+        AnalyzedInsertStatement stmt =
+            e.analyze("insert into users(id, name) values(1, 'max') returning _docid");
+        assertThat(stmt.fields(), contains(isField("_docid")));
+        assertThat(stmt.returnValues(), contains(isReference("_docid")));
     }
 
     @Test
     public void test_insert_with_id_renamed_in_returning_clause() throws Exception {
         AnalyzedInsertStatement stmt =
-            e.analyze("insert into users(id, name) values(1, 'max') returning _id as foo");
+            e.analyze("insert into users(id, name) values(1, 'max') returning id as foo");
         assertThat(stmt.fields(), contains(isField("foo")));
-        assertThat(stmt.returnValues(), contains(isReference("_id")));
+        assertThat(stmt.returnValues(), contains(isReference("id")));
     }
 
     @Test

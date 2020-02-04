@@ -25,6 +25,7 @@ import io.crate.analyze.expressions.ExpressionAnalysisContext;
 import io.crate.analyze.expressions.ExpressionAnalyzer;
 import io.crate.analyze.expressions.SubqueryAnalyzer;
 import io.crate.analyze.expressions.ValueNormalizer;
+import io.crate.analyze.relations.AbstractTableRelation;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.DocTableRelation;
 import io.crate.analyze.relations.ExcludedFieldProvider;
@@ -33,7 +34,6 @@ import io.crate.analyze.relations.FullQualifiedNameFieldProvider;
 import io.crate.analyze.relations.NameFieldProvider;
 import io.crate.analyze.relations.RelationAnalyzer;
 import io.crate.analyze.relations.StatementAnalysisContext;
-import io.crate.analyze.relations.TableRelation;
 import io.crate.analyze.relations.select.SelectAnalysis;
 import io.crate.analyze.relations.select.SelectAnalyzer;
 import io.crate.common.collections.Lists2;
@@ -42,7 +42,6 @@ import io.crate.expression.eval.EvaluatingNormalizer;
 import io.crate.expression.symbol.DynamicReference;
 import io.crate.expression.symbol.Field;
 import io.crate.expression.symbol.InputColumn;
-import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.Symbol;
 import io.crate.expression.symbol.format.SymbolFormatter;
 import io.crate.expression.symbol.format.SymbolPrinter;
@@ -72,7 +71,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
@@ -145,10 +143,10 @@ class InsertAnalyzer {
             insert.duplicateKeyContext()
         );
 
-        MaybeAliasedStatement maybeAliasedStatement = MaybeAliasedStatement.analyze(tableRelation);
-        AnalyzedRelation analyzedRelation = maybeAliasedStatement.nonAliasedRelation();
+        var maybeAliasedStatement = MaybeAliasedStatement.analyze(tableRelation);
+        AbstractTableRelation table = (AbstractTableRelation) maybeAliasedStatement.nonAliasedRelation();
 
-        EvaluatingNormalizer normalizer = new EvaluatingNormalizer(functions, RowGranularity.CLUSTER, null, tableRelation);
+        EvaluatingNormalizer normalizer = new EvaluatingNormalizer(functions, RowGranularity.CLUSTER, null, table);
 
         final boolean ignoreDuplicateKeys =
             insert.duplicateKeyContext().getType() == Insert.DuplicateKeyContext.Type.ON_CONFLICT_DO_NOTHING;
@@ -156,7 +154,7 @@ class InsertAnalyzer {
         List<Symbol> returnValues = List.of();
         List<ColumnIdent> outputNames = List.of();
 
-        var returningItems = processReturningItems(insert, txnCtx, typeHints, tableInfo);
+        var returningItems = processReturningItems(insert, txnCtx, typeHints);
 
         if (returningItems != null) {
             returnValues = Lists2.map(returningItems.outputSymbols(), x -> normalizer.normalize(x, txnCtx));
@@ -340,35 +338,29 @@ class InsertAnalyzer {
     }
 
     @Nullable
-    private SelectAnalysis processReturningItems(Insert<?> insert, CoordinatorTxnCtx txnCtx, ParamTypeHints typeHints, DocTableInfo tableInfo) {
+    private SelectAnalysis processReturningItems(Insert<?> insert, CoordinatorTxnCtx txnCtx, ParamTypeHints typeHints) {
         if (insert.returningClause().isEmpty()) {
             return null;
         }
         var stmtCtx = new StatementAnalysisContext(typeHints, Operation.READ, txnCtx);
         var relCtx = stmtCtx.startRelation();
-        AnalyzedRelation analyze = relationAnalyzer.analyze(insert.table(), stmtCtx);
+        relationAnalyzer.analyze(insert.table(), stmtCtx);
         stmtCtx.endRelation();
         SubqueryAnalyzer subqueryAnalyzer =
             new SubqueryAnalyzer(relationAnalyzer, new StatementAnalysisContext(typeHints, Operation.INSERT, txnCtx));
-
-//        MaybeAliasedStatement maybeAliasedStatement = MaybeAliasedStatement.analyze(new TableRelation(tableInfo));
-//        AnalyzedRelation analyzedRelation = maybeAliasedStatement.nonAliasedRelation();
-
 
         var exprCtx = new ExpressionAnalysisContext();
         var sourceExprAnalyzer = new ExpressionAnalyzer(
             functions,
             txnCtx,
             typeHints,
-            new NameFieldProvider(analyze),
-//            new FullQualifiedNameFieldProvider(
-//                relCtx.sources(),
-//                relCtx.parentSources(),
-//                txnCtx.sessionContext().searchPath().currentSchema()
-//            ),
+            new FullQualifiedNameFieldProvider(
+                relCtx.sources(),
+                relCtx.parentSources(),
+                txnCtx.sessionContext().searchPath().currentSchema()
+            ),
             subqueryAnalyzer
             );
-
 
         return SelectAnalyzer.analyzeSelectItems(
             insert.returningClause(),
